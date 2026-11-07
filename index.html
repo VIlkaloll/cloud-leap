@@ -486,11 +486,14 @@
     let settingsReturnScene = 'menu';
 
     let coinAnimTimer = 0;
+    
     let skinScrollY = 0;
     let isDraggingScroll = false;
     let dragStartY = 0;
     let scrollStartY = 0;
-    let totalDragDist = 0;
+    
+    let touchStartX = 0;
+    let touchStartY = 0;
 
     let pendingConfirm = null;
     let pendingBuySkinId = null;
@@ -980,10 +983,6 @@
         return true;
       }
 
-      if (totalDragDist > 20) {
-        return true;
-      }
-
       if (mx >= 100 && mx <= 300 && my >= 510 && my <= 570) {
         playClickSound();
         inSkins = false;
@@ -1230,7 +1229,6 @@
         isDraggingScroll = true;
         dragStartY = c.my;
         scrollStartY = skinScrollY;
-        totalDragDist = 0;
       }
       
       handleTap(c.mx, c.my);
@@ -1243,7 +1241,6 @@
 
       if (isDraggingScroll) {
         const dy = c.my - dragStartY;
-        totalDragDist += Math.abs(dy);
         skinScrollY = scrollStartY + dy;
         
         const rows = Math.ceil(SKINS.length / 3);
@@ -1278,80 +1275,80 @@
       e.preventDefault();
 
       const rect = canvas.getBoundingClientRect();
+      const touch = e.touches[0];
+      if (!touch) return;
 
-      for (let i = 0; i < e.touches.length; i++) {
-        const touch = e.touches[i];
-        const mx = (touch.clientX - rect.left) / rect.width * canvas.width;
-        const my = (touch.clientY - rect.top) / rect.height * canvas.height;
+      const mx = (touch.clientX - rect.left) / rect.width * canvas.width;
+      const my = (touch.clientY - rect.top) / rect.height * canvas.height;
 
-        if (inSkins && pendingConfirm === null) {
-          isDraggingScroll = true;
-          dragStartY = my;
-          scrollStartY = skinScrollY;
-          totalDragDist = 0;
-          continue;
+      touchStartX = mx;
+      touchStartY = my;
+
+      if (inSkins && pendingConfirm === null) {
+        dragStartY = my;
+        scrollStartY = skinScrollY;
+        isDraggingScroll = false;
+      }
+
+      if (inSettings && settingsTab === 'sound' && pendingConfirm === null) {
+        if (isOnSlider(mx, my, MUSIC_SLIDER_Y)) {
+          draggingSlider = 'music';
+          musicVolume = pointToSliderValue(mx);
+          music.volume = musicVolume;
+          saveVolumes();
+          return;
         }
-
-        if (inSettings && settingsTab === 'sound' && pendingConfirm === null) {
-          if (isOnSlider(mx, my, MUSIC_SLIDER_Y)) {
-            draggingSlider = 'music';
-            musicVolume = pointToSliderValue(mx);
-            music.volume = musicVolume;
-            saveVolumes();
-            continue;
-          }
-          if (isOnSlider(mx, my, SOUND_SLIDER_Y)) {
-            draggingSlider = 'sound';
-            soundVolume = pointToSliderValue(mx);
-            saveVolumes();
-            continue;
-          }
+        if (isOnSlider(mx, my, SOUND_SLIDER_Y)) {
+          draggingSlider = 'sound';
+          soundVolume = pointToSliderValue(mx);
+          saveVolumes();
+          return;
         }
+      }
 
-        if (!inMenu && !inSettings && !inSkins && !paused && !gameOver) {
-          if (mx >= 15 && mx <= 115 && my >= 485 && my <= 585) {
-            touchLeft = true;
-            continue;
-          }
-          if (mx >= 285 && mx <= 385 && my >= 485 && my <= 585) {
-            touchRight = true;
-            continue;
-          }
+      if (!inMenu && !inSettings && !inSkins && !paused && !gameOver) {
+        if (mx >= 15 && mx <= 115 && my >= 485 && my <= 585) {
+          touchLeft = true;
+          return;
         }
-
-        handleTap(mx, my);
+        if (mx >= 285 && mx <= 385 && my >= 485 && my <= 585) {
+          touchRight = true;
+          return;
+        }
       }
     }, { passive: false });
 
     container.addEventListener('touchmove', (e) => {
       const rect = canvas.getBoundingClientRect();
+      const touch = e.touches[0];
+      if (!touch) return;
       
-      if (isDraggingScroll && inSkins) {
-        e.preventDefault();
-        const touch = e.touches[0];
-        if (!touch) return;
-        const my = (touch.clientY - rect.top) / rect.height * canvas.height;
-        
-        const dy = my - dragStartY;
-        totalDragDist += Math.abs(dy);
-        skinScrollY = scrollStartY + dy;
-        
-        const rows = Math.ceil(SKINS.length / 3);
-        const totalHeight = rows * SKIN_CARD_H + (rows - 1) * SKIN_CARD_GAP;
-        const maxScroll = 0;
-        const minScroll = Math.min(0, 380 - totalHeight);
+      const mx = (touch.clientX - rect.left) / rect.width * canvas.width;
+      const my = (touch.clientY - rect.top) / rect.height * canvas.height;
 
-        if (skinScrollY > maxScroll) skinScrollY = maxScroll;
-        if (skinScrollY < minScroll) skinScrollY = minScroll;
+      if (inSkins && pendingConfirm === null) {
+        const dy = my - touchStartY;
+        if (Math.abs(dy) > 15) {
+          isDraggingScroll = true;
+        }
+
+        if (isDraggingScroll) {
+          e.preventDefault();
+          skinScrollY = scrollStartY + dy;
+          
+          const rows = Math.ceil(SKINS.length / 3);
+          const totalHeight = rows * SKIN_CARD_H + (rows - 1) * SKIN_CARD_GAP;
+          const maxScroll = 0;
+          const minScroll = Math.min(0, 380 - totalHeight);
+
+          if (skinScrollY > maxScroll) skinScrollY = maxScroll;
+          if (skinScrollY < minScroll) skinScrollY = minScroll;
+        }
         return;
       }
 
       if (!draggingSlider || pendingConfirm !== null) return;
       e.preventDefault();
-
-      const touch = e.touches[0];
-      if (!touch) return;
-      const mx = (touch.clientX - rect.left) / rect.width * canvas.width;
 
       if (draggingSlider === 'music') {
         musicVolume = pointToSliderValue(mx);
@@ -1363,7 +1360,11 @@
       }
     }, { passive: false });
 
-    container.addEventListener('touchend', () => {
+    container.addEventListener('touchend', (e) => {
+      if (!isDraggingScroll && draggingSlider === null) {
+        handleTap(touchStartX, touchStartY);
+      }
+
       draggingSlider = null;
       isDraggingScroll = false;
       touchLeft = false;
