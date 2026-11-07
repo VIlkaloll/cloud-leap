@@ -82,6 +82,9 @@
     const skinLolyaImg = new Image();
     skinLolyaImg.src = 'player_skin_lolya.png';
 
+    const skinApelsinkaImg = new Image();
+    skinApelsinkaImg.src = 'player_skin_apelsinka.png';
+
     const platformImg = new Image();
     platformImg.src = 'platform.png';
 
@@ -181,6 +184,7 @@
       { id: 'panda', name: 'Panda', price: 75, img: skinPandaImg },
       { id: 'pumpkin', name: 'Pumpkin', price: 75, img: skinPumpkinImg },
       { id: 'lolya', name: 'Lolya', price: 75, img: skinLolyaImg },
+      { id: 'apelsinka', name: 'Apelsinka', price: 75, img: skinApelsinkaImg },
       { id: 'kitty', name: 'Kitty', price: 100, img: skinKittyImg }
     ];
 
@@ -482,6 +486,11 @@
     let settingsReturnScene = 'menu';
 
     let coinAnimTimer = 0;
+    let skinScrollY = 0;
+    let isDraggingScroll = false;
+    let dragStartY = 0;
+    let scrollStartY = 0;
+    let totalDragDist = 0;
 
     let pendingConfirm = null;
     let pendingBuySkinId = null;
@@ -952,7 +961,7 @@
       const col = i % 3;
       const row = Math.floor(i / 3);
       const x = SKIN_ROW_X + col * (SKIN_CARD_W + SKIN_CARD_GAP);
-      const y = SKIN_CARD_Y + row * (SKIN_CARD_H + SKIN_CARD_GAP);
+      const y = SKIN_CARD_Y + row * (SKIN_CARD_H + SKIN_CARD_GAP) + skinScrollY;
       return { x: x, y: y, w: SKIN_CARD_W, h: SKIN_CARD_H };
     }
 
@@ -968,6 +977,10 @@
           confirmNo();
           return true;
         }
+        return true;
+      }
+
+      if (totalDragDist > 20) {
         return true;
       }
 
@@ -1212,6 +1225,14 @@
     container.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'touch') return;
       const c = getCanvasCoords(e.clientX, e.clientY);
+      
+      if (inSkins && pendingConfirm === null) {
+        isDraggingScroll = true;
+        dragStartY = c.my;
+        scrollStartY = skinScrollY;
+        totalDragDist = 0;
+      }
+      
       handleTap(c.mx, c.my);
     });
 
@@ -1220,7 +1241,21 @@
       mouseX = c.mx;
       mouseY = c.my;
 
-      if (pendingConfirm === null) {
+      if (isDraggingScroll) {
+        const dy = c.my - dragStartY;
+        totalDragDist += Math.abs(dy);
+        skinScrollY = scrollStartY + dy;
+        
+        const rows = Math.ceil(SKINS.length / 3);
+        const totalHeight = rows * SKIN_CARD_H + (rows - 1) * SKIN_CARD_GAP;
+        const maxScroll = 0;
+        const minScroll = Math.min(0, 380 - totalHeight);
+
+        if (skinScrollY > maxScroll) skinScrollY = maxScroll;
+        if (skinScrollY < minScroll) skinScrollY = minScroll;
+      }
+
+      if (pendingConfirm === null && !isDraggingScroll) {
         if (draggingSlider === 'music') {
           musicVolume = pointToSliderValue(mouseX);
           music.volume = musicVolume;
@@ -1234,6 +1269,7 @@
 
     document.addEventListener('mouseup', () => {
       draggingSlider = null;
+      isDraggingScroll = false;
       touchLeft = false;
       touchRight = false;
     });
@@ -1247,6 +1283,14 @@
         const touch = e.touches[i];
         const mx = (touch.clientX - rect.left) / rect.width * canvas.width;
         const my = (touch.clientY - rect.top) / rect.height * canvas.height;
+
+        if (inSkins && pendingConfirm === null) {
+          isDraggingScroll = true;
+          dragStartY = my;
+          scrollStartY = skinScrollY;
+          totalDragDist = 0;
+          continue;
+        }
 
         if (inSettings && settingsTab === 'sound' && pendingConfirm === null) {
           if (isOnSlider(mx, my, MUSIC_SLIDER_Y)) {
@@ -1280,10 +1324,31 @@
     }, { passive: false });
 
     container.addEventListener('touchmove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      
+      if (isDraggingScroll && inSkins) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        if (!touch) return;
+        const my = (touch.clientY - rect.top) / rect.height * canvas.height;
+        
+        const dy = my - dragStartY;
+        totalDragDist += Math.abs(dy);
+        skinScrollY = scrollStartY + dy;
+        
+        const rows = Math.ceil(SKINS.length / 3);
+        const totalHeight = rows * SKIN_CARD_H + (rows - 1) * SKIN_CARD_GAP;
+        const maxScroll = 0;
+        const minScroll = Math.min(0, 380 - totalHeight);
+
+        if (skinScrollY > maxScroll) skinScrollY = maxScroll;
+        if (skinScrollY < minScroll) skinScrollY = minScroll;
+        return;
+      }
+
       if (!draggingSlider || pendingConfirm !== null) return;
       e.preventDefault();
 
-      const rect = canvas.getBoundingClientRect();
       const touch = e.touches[0];
       if (!touch) return;
       const mx = (touch.clientX - rect.left) / rect.width * canvas.width;
@@ -1300,12 +1365,14 @@
 
     container.addEventListener('touchend', () => {
       draggingSlider = null;
+      isDraggingScroll = false;
       touchLeft = false;
       touchRight = false;
     });
 
     container.addEventListener('touchcancel', () => {
       draggingSlider = null;
+      isDraggingScroll = false;
       touchLeft = false;
       touchRight = false;
     });
@@ -1450,23 +1517,18 @@
       ctx.fillStyle = menuGradient;
       ctx.fillRect(0, 0, 400, 600);
 
-      ctx.fillStyle = 'white';
-      ctx.font = 'bold 32px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('SKINS', 200, 70);
-
-      ctx.drawImage(coinPanelImg, 130, 90, 140, 40);
-      ctx.drawImage(coinImg, 145, 95, 30, 30);
-      ctx.fillStyle = 'white';
-      ctx.font = 'bold 22px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText(coinsTotal, 185, 123);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 120, 400, 380);
+      ctx.clip();
 
       for (let i = 0; i < SKINS.length; i++) {
         const skin = SKINS[i];
         const card = getSkinCardRect(i);
         const owned = ownedSkins.includes(skin.id);
         const selected = selectedSkin === skin.id;
+
+        if (card.y + card.h < 100 || card.y > 510) continue;
 
         ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
         roundedRect(ctx, card.x, card.y, card.w, card.h, 14);
@@ -1502,6 +1564,19 @@
           ctx.fillText(skin.price + ' coins', card.x + card.w / 2, card.y + 135);
         }
       }
+      ctx.restore();
+
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 32px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('SKINS', 200, 70);
+
+      ctx.drawImage(coinPanelImg, 130, 90, 140, 40);
+      ctx.drawImage(coinImg, 145, 95, 30, 30);
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(coinsTotal, 185, 123);
 
       ctx.textAlign = 'left';
 
