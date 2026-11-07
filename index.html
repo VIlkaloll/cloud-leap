@@ -460,6 +460,9 @@
     let eventVY = 0;
     let eventSize = 60;
     let clouds = [];
+    let bgClouds = [];
+    let particles = [];
+    let floatingTexts = [];
 
     let inMenu = true;
     let inSettings = false;
@@ -577,12 +580,18 @@
     const SKIN_CARD_GAP = 15;
     const SKIN_ROW_X = (400 - (3 * SKIN_CARD_W + 2 * SKIN_CARD_GAP)) / 2;
 
+    const FS_BTN_X = 340;
+    const FS_BTN_Y = 150;
+    const FS_BTN_SIZE = 40;
+
     let landTimer = 0;
     let paused = false;
     let gameOver = false;
     let highScore = Number(localStorage.getItem('highScore') || 0);
+    let startHighScore = highScore;
     let isNewRecord = false;
     let gameOverTimer = 0;
+    let recordTextShown = false;
 
     let startPhase = 0;
     let currentPhase = 0;
@@ -631,6 +640,17 @@
           size: 60 + Math.random() * 60,
           speed: 0.2 + Math.random() * 0.4,
           alpha: 0.15 + Math.random() * 0.15
+        });
+      }
+
+      bgClouds = [];
+      for (let i = 0; i < 12; i++) {
+        bgClouds.push({
+          x: Math.random() * 500 - 50,
+          y: 100 + Math.random() * 400,
+          size: 100 + Math.random() * 80,
+          speed: -0.05 - Math.random() * 0.05,
+          alpha: 0.05 + Math.random() * 0.05
         });
       }
     }
@@ -699,7 +719,8 @@
         isMoving: false,
         vx: 0,
         bobPhase: Math.random() * Math.PI * 2,
-        collected: false
+        collected: false,
+        squash: 0
       };
     }
 
@@ -810,6 +831,8 @@
     function resetGame() {
       score = 0;
       platforms = [];
+      particles = [];
+      floatingTexts = [];
       lastSide = -1;
       gameOver = false;
       paused = false;
@@ -820,6 +843,9 @@
       lastCoinPlatformNum = -100;
       pendingCenterX = -1;
       spawnCooldown = 0;
+      
+      startHighScore = highScore;
+      recordTextShown = false;
 
       createStars();
       createClouds();
@@ -881,6 +907,26 @@
     }
 
     document.addEventListener('keydown', () => { startMusic(); });
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        if (document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen();
+        } else if (document.documentElement.webkitRequestFullscreen) {
+          document.documentElement.webkitRequestFullscreen();
+        } else if (document.documentElement.msRequestFullscreen) {
+          document.documentElement.msRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        } else if (document.msExitFullscreen) {
+          document.msExitFullscreen();
+        }
+      }
+    }
 
     function getCanvasCoords(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
@@ -1060,6 +1106,13 @@
 
       if (inMenu) {
         if (playerJumpTimer > 0) return;
+
+        if (mx >= FS_BTN_X && mx <= FS_BTN_X + FS_BTN_SIZE &&
+            my >= FS_BTN_Y && my <= FS_BTN_Y + FS_BTN_SIZE) {
+          playClickSound();
+          toggleFullscreen();
+          return;
+        }
 
         if (mx >= 70 && mx <= 330 && my >= 310 && my <= 380) {
           playClickSound();
@@ -1693,6 +1746,17 @@
         ctx.textAlign = 'left';
         ctx.fillText('v0.1 alpha', 10, 585);
 
+        const hoverFS = (mouseX >= FS_BTN_X && mouseX <= FS_BTN_X + FS_BTN_SIZE &&
+                         mouseY >= FS_BTN_Y && mouseY <= FS_BTN_Y + FS_BTN_SIZE);
+        ctx.fillStyle = hoverFS ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.4)';
+        ctx.fillRect(FS_BTN_X, FS_BTN_Y, FS_BTN_SIZE, FS_BTN_SIZE);
+        
+        ctx.fillStyle = hoverFS ? '#222' : 'white';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('⛶', FS_BTN_X + FS_BTN_SIZE / 2, FS_BTN_Y + FS_BTN_SIZE / 2 + 8);
+        ctx.textAlign = 'left';
+
         if (playerJumpTimer === 0 && pendingAction !== null) {
           if (pendingAction === 'play') {
             fadingOut = true;
@@ -1915,6 +1979,25 @@
       if (y < 300) {
         let shift = 300 - y;
         score = score + shift / 30;
+
+        if (Math.floor(score) > highScore) {
+          highScore = Math.floor(score);
+          localStorage.setItem('highScore', highScore);
+        }
+
+        if (Math.floor(score) > startHighScore && !recordTextShown && startHighScore > 0) {
+           floatingTexts.push({
+             x: x + 25,
+             y: y - 10,
+             text: 'NEW RECORD!',
+             color: '#FFD700',
+             life: 2.0,
+             vy: -40,
+             size: 24
+           });
+           recordTextShown = true;
+        }
+
         y = 300;
         for (let p of platforms) {
           p.y = p.y + shift;
@@ -1947,6 +2030,31 @@
             p.vx = -Math.abs(p.vx);
           }
         }
+
+        if (p.squash > 0) {
+          p.squash = p.squash - delta * 10;
+          if (p.squash < 0) p.squash = 0;
+        }
+      }
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const pt = particles[i];
+        pt.x += pt.vx * delta;
+        pt.y += pt.vy * delta;
+        pt.vy += 100 * delta;
+        pt.life -= delta * 2.5;
+        if (pt.life <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+
+      for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        const ft = floatingTexts[i];
+        ft.y += ft.vy * delta;
+        ft.life -= delta;
+        if (ft.life <= 0) {
+          floatingTexts.splice(i, 1);
+        }
       }
 
       targetPhase = startPhase + Math.floor(score / 500);
@@ -1974,6 +2082,19 @@
             }
 
             y = p.y - 50;
+            p.squash = 1;
+
+            for (let i = 0; i < 6; i++) {
+              particles.push({
+                x: x + 25 + (Math.random() - 0.5) * 20,
+                y: y + 45 + (Math.random() - 0.5) * 10,
+                vx: (Math.random() - 0.5) * 120,
+                vy: (Math.random() - 0.5) * 120 - 30,
+                size: 1.5 + Math.random() * 1.5,
+                life: 1
+              });
+            }
+
             if (p.spring) {
               vy = -1080;
               playSpringSound();
@@ -2007,6 +2128,16 @@
               coinsTotal = coinsTotal + 1;
               saveStats();
               playCoinSound();
+              
+              floatingTexts.push({
+                x: coinX + 15,
+                y: coinY,
+                text: '+1',
+                color: '#FFD700',
+                life: 1.0,
+                vy: -50,
+                size: 20
+              });
             }
           }
         }
@@ -2097,6 +2228,18 @@
         }
       }
 
+      for (let bgCloud of bgClouds) {
+        bgCloud.x = bgCloud.x + bgCloud.speed * 60 * delta;
+
+        if (bgCloud.x < -150) {
+          bgCloud.x = 450;
+          bgCloud.y = 100 + Math.random() * 400;
+        } else if (bgCloud.x > 450) {
+          bgCloud.x = -150;
+          bgCloud.y = 100 + Math.random() * 400;
+        }
+      }
+
       for (let cloud of clouds) {
         cloud.x = cloud.x + cloud.speed * 60 * delta;
 
@@ -2105,6 +2248,12 @@
           cloud.y = 450 + Math.random() * 150;
         }
       }
+
+      for (let bgCloud of bgClouds) {
+        ctx.globalAlpha = bgCloud.alpha;
+        ctx.drawImage(platformImg, bgCloud.x, bgCloud.y, bgCloud.size, 20);
+      }
+      ctx.globalAlpha = 1;
 
       if (nightAlpha > 0) {
         for (let s of stars) {
@@ -2245,13 +2394,15 @@
 
       for (let p of platforms) {
         const pW = p.width || PLATFORM_W;
+        const squashOffset = p.squash * 5;
+        const drawHeight = 20 - squashOffset;
 
         if (p.spike) {
           ctx.drawImage(spikeImg, p.x, p.y, pW, 20);
         } else if (p.spring) {
           ctx.drawImage(springImg, p.x, p.y, pW, 20);
         } else {
-          ctx.drawImage(platformImg, p.x, p.y, pW, 20);
+          ctx.drawImage(platformImg, p.x, p.y + squashOffset, pW, drawHeight);
         }
 
         if (p.hasCoin && !p.collected) {
@@ -2261,6 +2412,15 @@
         }
       }
 
+      for (let pt of particles) {
+        ctx.globalAlpha = pt.life;
+        ctx.fillStyle = 'white';
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
       const curImg = getCurrentPlayerImage();
 
       if (landTimer > 0) {
@@ -2268,6 +2428,16 @@
       } else {
         ctx.drawImage(curImg, 0, 0, 50, 50, x, y, 50, 50);
       }
+
+      for (let ft of floatingTexts) {
+        ctx.globalAlpha = Math.min(1, ft.life);
+        ctx.fillStyle = ft.color;
+        ctx.font = 'bold ' + ft.size + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(ft.text, ft.x, ft.y);
+      }
+      ctx.globalAlpha = 1;
+      ctx.textAlign = 'left';
 
       ctx.drawImage(scorePanelImg, 0, 0, 170, 80);
 
@@ -2355,9 +2525,7 @@
       gamesPlayed = gamesPlayed + 1;
       saveStats();
 
-      if (Math.floor(score) > highScore) {
-        highScore = Math.floor(score);
-        localStorage.setItem('highScore', highScore);
+      if (Math.floor(score) > startHighScore) {
         isNewRecord = true;
         playRecordSound();
       } else {
