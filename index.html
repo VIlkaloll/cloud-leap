@@ -167,6 +167,10 @@
     const meowSpringSound = new Audio('meow_spring.mp3');
     const meowSpikeSound = new Audio('meow_spike.mp3');
 
+    const TRACKS = ['music.mp3', 'music_2.mp3'];
+    let currentTrack = Number(localStorage.getItem('currentTrack') || 0);
+    if (currentTrack >= TRACKS.length) currentTrack = 0;
+
     let musicVolume = Number(localStorage.getItem('musicVolume'));
     if (isNaN(musicVolume)) musicVolume = 0.3;
 
@@ -221,6 +225,7 @@
     function saveVolumes() {
       localStorage.setItem('musicVolume', musicVolume);
       localStorage.setItem('soundVolume', soundVolume);
+      localStorage.setItem('currentTrack', currentTrack);
     }
 
     function saveStats() {
@@ -242,9 +247,22 @@
 
     let musicOn = true;
 
-    const music = new Audio('music.mp3');
+    const music = new Audio();
     music.loop = true;
     music.volume = musicVolume;
+
+    function loadTrack(index) {
+      music.src = TRACKS[index];
+    }
+
+    function playTrack(index) {
+      music.src = TRACKS[index];
+      if (musicStarted && musicOn) {
+        music.play().catch(() => {});
+      }
+    }
+
+    loadTrack(currentTrack);
 
     let audioCtx = null;
 
@@ -528,7 +546,9 @@
       if (pendingConfirm === 'resetSound') {
         musicVolume = 0.3;
         soundVolume = 1.0;
+        currentTrack = 0;
         music.volume = musicVolume;
+        playTrack(currentTrack);
         saveVolumes();
       } else if (pendingConfirm === 'resetRecord') {
         highScore = 0;
@@ -905,7 +925,7 @@
     function startMusic() {
       if (!musicStarted) {
         music.volume = musicVolume;
-        music.play();
+        music.play().catch(() => {});
 
         if (!audioCtx) {
           audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1079,9 +1099,17 @@
         }
 
         if (mx >= 100 && mx <= 300 && my >= 310 && my <= 370) {
-          playClickSound();
-          soonShown = true;
-          soonTimer = 40;
+          if (mx >= 120 && mx <= 160) {
+            playClickSound();
+            currentTrack = (currentTrack - 1 + TRACKS.length) % TRACKS.length;
+            playTrack(currentTrack);
+            saveVolumes();
+          } else if (mx >= 240 && mx <= 280) {
+            playClickSound();
+            currentTrack = (currentTrack + 1) % TRACKS.length;
+            playTrack(currentTrack);
+            saveVolumes();
+          }
           return true;
         }
 
@@ -1200,7 +1228,7 @@
         musicOn = !musicOn;
         if (musicOn) {
           music.volume = paused ? musicVolume * 0.33 : musicVolume;
-          music.play();
+          music.play().catch(() => {});
         } else {
           music.pause();
         }
@@ -1635,9 +1663,27 @@
         drawSlider(SLIDER_X, MUSIC_SLIDER_Y, musicVolume, 'MUSIC');
         drawSlider(SLIDER_X, SOUND_SLIDER_Y, soundVolume, 'SOUNDS');
 
-        const hoverSoon = (mouseX >= 100 && mouseX <= 300 &&
-                           mouseY >= 310 && mouseY <= 370);
-        drawSettingsButton(ctx, 100, 310, 200, 60, 'COMING SOON...', hoverSoon);
+        const hoverTrack = (mouseX >= 100 && mouseX <= 300 && mouseY >= 310 && mouseY <= 370);
+        if (hoverTrack) {
+          ctx.drawImage(menuBtnHoverImg, 100, 310, 200, 60);
+        } else {
+          ctx.drawImage(menuBtnImg, 100, 310, 200, 60);
+        }
+        
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 18px sans-serif';
+        ctx.textAlign = 'center';
+        
+        const trackText = 'Music Track ' + (currentTrack + 1);
+        ctx.fillText(trackText, 200, 345);
+        
+        ctx.font = 'bold 24px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('<-', 115, 347);
+        
+        ctx.textAlign = 'right';
+        ctx.fillText('->', 285, 347);
+        ctx.textAlign = 'left';
 
         const hoverReset = (mouseX >= 100 && mouseX <= 300 &&
                             mouseY >= 410 && mouseY <= 470);
@@ -2153,6 +2199,7 @@
               prevBottom <= p.y && playerBottom >= p.y) {
 
             if (p.spike) {
+              playSpikeSound();
               triggerGameOver();
               break;
             }
