@@ -660,6 +660,7 @@
     let nightAlpha = 0;
 
     let lemonLandTime = -100;
+    let lemonJumpTime = -100;
 
     function createStars() {
       stars = [];
@@ -892,6 +893,7 @@
       recordTextShown = false;
       
       lemonLandTime = -100;
+      lemonJumpTime = -100;
 
       createStars();
       createClouds();
@@ -915,7 +917,7 @@
         if (platforms.length > 0) {
           prevX = platforms[platforms.length - 1].x;
         }
-        const created = createPlatform(600 - i * 80, prevX);
+        const created = createPlatform(540 - i * 80, prevX);
         for (const p of created) platforms.push(p);
       }
       platforms.sort((a, b) => b.y - a.y);
@@ -1584,7 +1586,6 @@
           ctx.stroke();
         }
 
-        // Иконка скина: для всех берём левый верхний кадр 50x50
         ctx.drawImage(skin.img, 0, 0, 50, 50, card.x + card.w / 2 - 30, card.y + 20, 60, 60);
 
         ctx.fillStyle = 'white';
@@ -1841,7 +1842,6 @@
 
         const curImg = getCurrentPlayerImage();
 
-        // Превью игрока в меню: для Lemonn всегда верхний левый кадр
         if (isLemonnSelected()) {
           ctx.drawImage(curImg, 0, 0, 50, 50, 165, 180 + playerJumpOffset, 70, 70);
         } else if (playerJumpTimer > 7) {
@@ -2225,7 +2225,8 @@
           const pW = p.width || PLATFORM_W;
 
           if (x + 50 > p.x && x < p.x + pW &&
-              prevBottom <= p.y && playerBottom >= p.y) {
+              prevBottom <= p.y && playerBottom >= p.y &&
+              p.y < 580) {
 
             if (p.spike) {
               playSpikeSound();
@@ -2249,6 +2250,7 @@
 
             if (isLemonnSelected()) {
                lemonLandTime = timeSeconds;
+               lemonJumpTime = timeSeconds;
 
                for (let i = 0; i < 8; i++) {
                  juiceParticles.push({
@@ -2598,36 +2600,55 @@
 
       const curImg = getCurrentPlayerImage();
 
-      // Отрисовка игрока в игре.
-      // Lemonn: спрайт-лист 100x100 = сетка 2x2 по 50x50.
-      // Кадры: (0,0) обычный, (50,0) обычный-2,
-      //        (0,50) сплюснутый, (50,50) сильно сплюснутый.
       if (isLemonnSelected()) {
-         let lemonCol = 0;
-         let lemonRow = 0;
+         const LEMON_FRAMES = [
+            { col: 0, row: 0 },
+            { col: 1, row: 0 },
+            { col: 0, row: 1 },
+            { col: 1, row: 1 }
+         ];
+
+         let lemonFrameIndex = 0;
 
          const timeSinceLand = timeSeconds - lemonLandTime;
+         const timeSinceJump = timeSeconds - lemonJumpTime;
 
-         if (timeSinceLand >= 0 && timeSinceLand < 0.5) {
-            const progress = timeSinceLand / 0.5;
-            if (progress < 0.25) {
-               lemonRow = 1; lemonCol = 0;
-            } else if (progress < 0.5) {
-               lemonRow = 1; lemonCol = 1;
-            } else if (progress < 0.75) {
-               lemonRow = 1; lemonCol = 0;
-            } else {
-               lemonRow = 1; lemonCol = 1;
-            }
-         } else if (timeSinceLand >= 0.5 && timeSinceLand < 0.75) {
-            lemonRow = 1; lemonCol = 0;
+         if (vy > 0) {
+            lemonFrameIndex = 0;
          } else {
-            lemonRow = 0; lemonCol = 0;
+            const JUMP_ANIM_DURATION = 0.25;
+            if (timeSinceJump >= 0 && timeSinceJump < JUMP_ANIM_DURATION) {
+               const t = timeSinceJump / JUMP_ANIM_DURATION;
+               if (t < 0.33) {
+                  lemonFrameIndex = 3;
+               } else if (t < 0.66) {
+                  lemonFrameIndex = 2;
+               } else if (t < 0.9) {
+                  lemonFrameIndex = 1;
+               } else {
+                  lemonFrameIndex = 0;
+               }
+            } else {
+               lemonFrameIndex = 0;
+            }
          }
 
+         const LAND_ANIM_DURATION = 0.15;
+         if (timeSinceLand >= 0 && timeSinceLand < LAND_ANIM_DURATION) {
+            const t = timeSinceLand / LAND_ANIM_DURATION;
+            if (t < 0.33) {
+               lemonFrameIndex = 1;
+            } else if (t < 0.66) {
+               lemonFrameIndex = 2;
+            } else {
+               lemonFrameIndex = 3;
+            }
+         }
+
+         const f = LEMON_FRAMES[lemonFrameIndex];
          ctx.drawImage(
             curImg,
-            lemonCol * 50, lemonRow * 50, 50, 50,
+            f.col * 50, f.row * 50, 50, 50,
             x, y, 50, 50
          );
       } else {
