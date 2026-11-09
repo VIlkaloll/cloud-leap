@@ -491,6 +491,10 @@
     let showRainbow = false;
     let rainbowAlpha = 0;
     let rainbowTimer = 0;
+    let showAurora = false;
+    let auroraAlpha = 0;
+    let auroraTimer = 0;
+    let auroraCooldown = 0;
     let eventActive = false;
     let eventX = 0;
     let eventY = 0;
@@ -635,6 +639,8 @@
     const FS_BTN_SIZE = 40;
 
     let landTimer = 0;
+    let justStarted = false;
+    let justStartedFrames = 0;
     let paused = false;
     let gameOver = false;
     let highScore = Number(localStorage.getItem('highScore') || 0);
@@ -697,13 +703,37 @@
       }
 
       bgClouds = [];
-      for (let i = 0; i < 12; i++) {
+
+      for (let i = 0; i < 6; i++) {
         bgClouds.push({
           x: Math.random() * 500 - 50,
-          y: 100 + Math.random() * 400,
-          size: 100 + Math.random() * 80,
-          speed: -0.05 - Math.random() * 0.05,
-          alpha: 0.05 + Math.random() * 0.05
+          y: 50 + Math.random() * 500,
+          size: 100 + Math.random() * 60,
+          speed: -0.03 - Math.random() * 0.02,
+          alpha: 0.04 + Math.random() * 0.03,
+          layer: 0
+        });
+      }
+
+      for (let i = 0; i < 5; i++) {
+        bgClouds.push({
+          x: Math.random() * 500 - 50,
+          y: 50 + Math.random() * 500,
+          size: 120 + Math.random() * 70,
+          speed: -0.08 - Math.random() * 0.04,
+          alpha: 0.06 + Math.random() * 0.03,
+          layer: 1
+        });
+      }
+
+      for (let i = 0; i < 4; i++) {
+        bgClouds.push({
+          x: Math.random() * 500 - 50,
+          y: 50 + Math.random() * 500,
+          size: 140 + Math.random() * 80,
+          speed: -0.14 - Math.random() * 0.06,
+          alpha: 0.08 + Math.random() * 0.04,
+          layer: 2
         });
       }
     }
@@ -711,12 +741,12 @@
     function updateClouds(delta) {
       for (let bgCloud of bgClouds) {
         bgCloud.x = bgCloud.x + bgCloud.speed * 60 * delta;
-        if (bgCloud.x < -150) {
+        if (bgCloud.x < -200) {
           bgCloud.x = 450;
-          bgCloud.y = 100 + Math.random() * 400;
+          bgCloud.y = 50 + Math.random() * 500;
         } else if (bgCloud.x > 450) {
-          bgCloud.x = -150;
-          bgCloud.y = 100 + Math.random() * 400;
+          bgCloud.x = -200;
+          bgCloud.y = 50 + Math.random() * 500;
         }
       }
 
@@ -730,6 +760,7 @@
     }
 
     function drawClouds(c) {
+      bgClouds.sort((a, b) => a.layer - b.layer);
       for (let bgCloud of bgClouds) {
         c.globalAlpha = bgCloud.alpha;
         c.drawImage(platformImg, bgCloud.x, bgCloud.y, bgCloud.size, 20);
@@ -769,6 +800,38 @@
           c.fillStyle = 'rgba(255, 255, 255, ' + starAlpha + ')';
           c.fill();
         }
+      }
+    }
+
+    function drawAurora(c, timeSeconds) {
+      if (auroraAlpha <= 0) return;
+
+      const waves = 4;
+      for (let i = 0; i < waves; i++) {
+        const baseY = 80 + i * 35;
+        const amplitude = 15 + i * 5;
+        const speed = 0.4 + i * 0.15;
+        const colorA = (i % 2 === 0) ? '100, 255, 180' : '140, 120, 255';
+        const alpha = auroraAlpha * 0.18;
+
+        c.beginPath();
+        for (let px = 0; px <= 400; px += 8) {
+          const py = baseY
+            + Math.sin(px * 0.02 + timeSeconds * speed) * amplitude
+            + Math.sin(px * 0.05 + timeSeconds * speed * 1.7) * (amplitude * 0.5);
+          if (px === 0) c.moveTo(px, py);
+          else c.lineTo(px, py);
+        }
+        c.lineTo(400, 0);
+        c.lineTo(0, 0);
+        c.closePath();
+
+        const grad = c.createLinearGradient(0, baseY - amplitude, 0, baseY + amplitude * 3);
+        grad.addColorStop(0, 'rgba(' + colorA + ', 0)');
+        grad.addColorStop(0.5, 'rgba(' + colorA + ', ' + alpha + ')');
+        grad.addColorStop(1, 'rgba(' + colorA + ', 0)');
+        c.fillStyle = grad;
+        c.fill();
       }
     }
 
@@ -996,6 +1059,10 @@
       showRainbow = false;
       rainbowAlpha = 0;
       rainbowTimer = 0;
+      showAurora = false;
+      auroraAlpha = 0;
+      auroraTimer = 0;
+      auroraCooldown = 0;
       eventActive = false;
 
       startPhase = Math.floor(Math.random() * 4);
@@ -1012,9 +1079,15 @@
         for (const p of created) platforms.push(p);
       }
       platforms.sort((a, b) => b.y - a.y);
+      platforms[0].isMoving = false;
+      platforms[0].vx = 0;
+      platforms[0].spike = false;
+      platforms[0].spawnProgress = 1;
       x = platforms[0].x + 15;
       y = platforms[0].y - 50;
       vy = 0;
+      justStarted = true;
+      justStartedFrames = 0;
       keys = {};
 
       if (!firstPlayDate) {
@@ -2220,8 +2293,18 @@
       if (keys['ArrowLeft'] || touchLeft) x = x - 300 * delta;
       if (keys['ArrowRight'] || touchRight) x = x + 300 * delta;
 
-      vy = vy + 1800 * delta;
-      y = y + vy * delta;
+      if (justStarted) {
+        y = platforms[0].y - 50;
+        vy = 0;
+        justStartedFrames++;
+        if (justStartedFrames >= 3) {
+          justStarted = false;
+          justStartedFrames = 0;
+        }
+      } else {
+        vy = vy + 1800 * delta;
+        y = y + vy * delta;
+      }
 
       if (y < 300) {
         let shift = 300 - y;
@@ -2335,8 +2418,8 @@
           const pW = p.width || PLATFORM_W;
 
           if (x + 50 > p.x && x < p.x + pW &&
-              prevBottom <= p.y && playerBottom >= p.y &&
-              p.y < 580) {
+              prevBottom <= p.y + 8 && playerBottom >= p.y &&
+              p.y < 600) {
 
             if (p.spike) {
               playSpikeSound();
@@ -2461,6 +2544,7 @@
       if (nextPhaseMod === 2) nightAlpha = phaseTransition;
 
       if (rainCooldown > 0) rainCooldown = rainCooldown - 1;
+      if (auroraCooldown > 0) auroraCooldown = auroraCooldown - 1;
 
       if (isRaining) {
         rainTimer = rainTimer - 1;
@@ -2498,6 +2582,30 @@
         }
       }
 
+      if (showAurora) {
+        auroraTimer = auroraTimer - 1;
+
+        if (auroraTimer > 1500) {
+          auroraAlpha = auroraAlpha + 0.01;
+          if (auroraAlpha > 1) auroraAlpha = 1;
+        } else if (auroraTimer < 120) {
+          auroraAlpha = auroraAlpha - 0.02;
+          if (auroraAlpha < 0) auroraAlpha = 0;
+        }
+
+        if (auroraTimer <= 0) {
+          showAurora = false;
+          auroraAlpha = 0;
+          auroraCooldown = 1500;
+        }
+      } else if (nightAlpha > 0.7 && auroraCooldown <= 0) {
+        if (Math.random() < 0.0004) {
+          showAurora = true;
+          auroraTimer = 1800;
+          auroraAlpha = 0;
+        }
+      }
+
       if (eventActive) {
         eventX = eventX + eventVX;
         eventY = eventY + eventVY;
@@ -2506,8 +2614,6 @@
           eventActive = false;
         }
       }
-
-      drawClouds(ctx);
 
       if (nightAlpha > 0) {
         for (let s of stars) {
@@ -2520,6 +2626,14 @@
           ctx.fill();
         }
       }
+
+      if (nightAlpha > 0) {
+        ctx.globalAlpha = nightAlpha;
+        drawAurora(ctx, timeSeconds);
+        ctx.globalAlpha = 1;
+      }
+
+      drawClouds(ctx);
 
       if (nightAlpha > 0 && Math.random() < 0.005) {
         spawnShootingStar();
