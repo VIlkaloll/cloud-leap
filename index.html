@@ -474,6 +474,14 @@
       return phases[phase % 4];
     }
 
+    function getMenuPhase() {
+      const h = new Date().getHours();
+      if (h >= 6 && h < 12) return 1;
+      if (h >= 12 && h < 18) return 0;
+      if (h >= 18) return 1;
+      return 2;
+    }
+
     let stars = [];
     let shootingStars = [];
     let rainDrops = [];
@@ -508,6 +516,7 @@
     let playerJumpOffset = 0;
     let playerJumpTimer = 0;
     let pendingAction = null;
+    let pauseAnimTime = 0;
 
     let draggingSlider = null;
     let settingsReturnScene = 'menu';
@@ -699,6 +708,70 @@
       }
     }
 
+    function updateClouds(delta) {
+      for (let bgCloud of bgClouds) {
+        bgCloud.x = bgCloud.x + bgCloud.speed * 60 * delta;
+        if (bgCloud.x < -150) {
+          bgCloud.x = 450;
+          bgCloud.y = 100 + Math.random() * 400;
+        } else if (bgCloud.x > 450) {
+          bgCloud.x = -150;
+          bgCloud.y = 100 + Math.random() * 400;
+        }
+      }
+
+      for (let cloud of clouds) {
+        cloud.x = cloud.x + cloud.speed * 60 * delta;
+        if (cloud.x > 450) {
+          cloud.x = -100;
+          cloud.y = 450 + Math.random() * 150;
+        }
+      }
+    }
+
+    function drawClouds(c) {
+      for (let bgCloud of bgClouds) {
+        c.globalAlpha = bgCloud.alpha;
+        c.drawImage(platformImg, bgCloud.x, bgCloud.y, bgCloud.size, 20);
+      }
+      c.globalAlpha = 1;
+
+      for (let cloud of clouds) {
+        c.globalAlpha = cloud.alpha;
+        c.fillStyle = 'white';
+        c.beginPath();
+        c.arc(cloud.x, cloud.y, cloud.size / 2, 0, Math.PI * 2);
+        c.arc(cloud.x + cloud.size / 3, cloud.y - cloud.size / 5, cloud.size / 2.5, 0, Math.PI * 2);
+        c.arc(cloud.x - cloud.size / 3, cloud.y - cloud.size / 5, cloud.size / 2.5, 0, Math.PI * 2);
+        c.fill();
+      }
+      c.globalAlpha = 1;
+    }
+
+    function drawMenuBackground(c) {
+      const phase = getMenuPhase();
+      const colors = getPhaseColors(phase);
+      const grad = c.createLinearGradient(0, 0, 0, 600);
+      grad.addColorStop(0, colors[0]);
+      grad.addColorStop(0.3, colors[1]);
+      grad.addColorStop(0.55, colors[2]);
+      grad.addColorStop(0.8, colors[3]);
+      grad.addColorStop(1, colors[4]);
+      c.fillStyle = grad;
+      c.fillRect(0, 0, 400, 600);
+
+      if (phase === 2) {
+        for (let s of stars) {
+          const flicker = 0.6 + Math.sin(Date.now() * 0.003 + s.flickerOffset) * 0.4;
+          const starAlpha = s.alpha * 0.8 * flicker;
+          c.beginPath();
+          c.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+          c.fillStyle = 'rgba(255, 255, 255, ' + starAlpha + ')';
+          c.fill();
+        }
+      }
+    }
+
     function spawnShootingStar() {
       shootingStars.push({
         x: Math.random() * 400,
@@ -764,7 +837,8 @@
         vx: 0,
         bobPhase: Math.random() * Math.PI * 2,
         collected: false,
-        squash: 0
+        squash: 0,
+        spawnProgress: 0
       };
     }
 
@@ -781,11 +855,27 @@
         pendingCenterX = -1;
         forcedByCenter = true;
       } else {
-        lastSide = -lastSide;
-        let distance = 70 + Math.random() * 80;
+        if (Math.random() < 0.75) {
+          lastSide = -lastSide;
+        }
+        let distance = 110 + Math.random() * 70;
+        if (Math.random() < 0.3) {
+          distance = 140 + Math.random() * 40;
+        }
         newX = prevX + lastSide * distance;
         if (newX < 0) newX = 0;
         if (newX > 290) newX = 290;
+
+        const prevCenter = prevX + PLATFORM_W / 2;
+        const newCenter = newX + PLATFORM_W / 2;
+        if (Math.abs(prevCenter - newCenter) < 80) {
+          let tryX = prevX + 110;
+          if (tryX > 290) tryX = prevX - 110;
+          if (tryX < 0) tryX = 0;
+          if (tryX > 290) tryX = 290;
+          newX = tryX;
+          lastSide = (newX > prevX) ? 1 : -1;
+        }
       }
 
       const canSpawnCoin = (platformCounter - lastCoinPlatformNum) >= 5;
@@ -881,6 +971,7 @@
       lastSide = -1;
       gameOver = false;
       paused = false;
+      pauseAnimTime = 0;
       canvas.style.filter = 'none';
       uiCtx.clearRect(0, 0, 400, 600);
 
@@ -1074,6 +1165,7 @@
 
         if (settingsReturnScene === 'game') {
           paused = true;
+          pauseAnimTime = 0;
           canvas.style.filter = 'blur(6px) brightness(0.6)';
           music.volume = musicVolume * 0.33;
         } else {
@@ -1205,6 +1297,7 @@
         if (mx >= 100 && mx <= 300 && my >= 280 && my <= 340) {
           playClickSound();
           paused = false;
+          pauseAnimTime = 0;
           canvas.style.filter = 'none';
           music.volume = musicVolume;
         } else if (mx >= 100 && mx <= 300 && my >= 360 && my <= 420) {
@@ -1230,6 +1323,7 @@
           my >= btnY && my <= btnY + BTN_SIZE) {
         playClickSound();
         paused = true;
+        pauseAnimTime = 0;
         canvas.style.filter = 'blur(6px) brightness(0.6)';
         music.volume = musicVolume * 0.33;
         return;
@@ -1258,6 +1352,7 @@
           my >= settingsBtnY && my <= settingsBtnY + BTN_SIZE) {
         playClickSound();
         paused = true;
+        pauseAnimTime = 0;
         canvas.style.filter = 'blur(6px) brightness(0.6)';
         music.volume = musicVolume * 0.33;
         settingsReturnScene = 'game';
@@ -1552,15 +1647,8 @@
       canvas.style.filter = 'none';
       uiCtx.clearRect(0, 0, 400, 600);
 
-      const menuColors = getPhaseColors(1);
-      const menuGradient = ctx.createLinearGradient(0, 0, 0, 600);
-      menuGradient.addColorStop(0, menuColors[0]);
-      menuGradient.addColorStop(0.3, menuColors[1]);
-      menuGradient.addColorStop(0.55, menuColors[2]);
-      menuGradient.addColorStop(0.8, menuColors[3]);
-      menuGradient.addColorStop(1, menuColors[4]);
-      ctx.fillStyle = menuGradient;
-      ctx.fillRect(0, 0, 400, 600);
+      drawMenuBackground(ctx);
+      drawClouds(ctx);
 
       ctx.save();
       ctx.beginPath();
@@ -1654,15 +1742,8 @@
       canvas.style.filter = 'none';
       uiCtx.clearRect(0, 0, 400, 600);
 
-      const menuColors = getPhaseColors(1);
-      const menuGradient = ctx.createLinearGradient(0, 0, 0, 600);
-      menuGradient.addColorStop(0, menuColors[0]);
-      menuGradient.addColorStop(0.3, menuColors[1]);
-      menuGradient.addColorStop(0.55, menuColors[2]);
-      menuGradient.addColorStop(0.8, menuColors[3]);
-      menuGradient.addColorStop(1, menuColors[4]);
-      ctx.fillStyle = menuGradient;
-      ctx.fillRect(0, 0, 400, 600);
+      drawMenuBackground(ctx);
+      drawClouds(ctx);
 
       const hoverSoundTab = (mouseX >= TAB_SOUND_X && mouseX <= TAB_SOUND_X + TAB_W &&
                              mouseY >= TAB_Y && mouseY <= TAB_Y + TAB_H);
@@ -1786,6 +1867,9 @@
       }
     }
 
+    createStars();
+    createClouds();
+
     function loop(timestamp) {
       if (!timestamp) timestamp = 0;
       let delta = (timestamp - lastTime) / 1000;
@@ -1795,6 +1879,8 @@
       const timeSeconds = timestamp / 1000;
 
       coinAnimTimer += delta * 10;
+
+      updateClouds(delta);
 
       if (inSkins) {
         renderSkins();
@@ -1820,15 +1906,8 @@
           }
         }
 
-        const menuColors = getPhaseColors(1);
-        const menuGradient = ctx.createLinearGradient(0, 0, 0, 600);
-        menuGradient.addColorStop(0, menuColors[0]);
-        menuGradient.addColorStop(0.3, menuColors[1]);
-        menuGradient.addColorStop(0.55, menuColors[2]);
-        menuGradient.addColorStop(0.8, menuColors[3]);
-        menuGradient.addColorStop(1, menuColors[4]);
-        ctx.fillStyle = menuGradient;
-        ctx.fillRect(0, 0, 400, 600);
+        drawMenuBackground(ctx);
+        drawClouds(ctx);
 
         ctx.drawImage(titleImg, 20, 30, 360, 110);
 
@@ -1937,12 +2016,21 @@
       }
 
       if (paused) {
+        pauseAnimTime += delta;
         uiCtx.clearRect(0, 0, 400, 600);
+
+        const titleBob = Math.sin(pauseAnimTime * 3) * 4;
 
         uiCtx.fillStyle = 'white';
         uiCtx.font = '48px sans-serif';
         uiCtx.textAlign = 'center';
-        uiCtx.fillText('PAUSED', 200, 180);
+        uiCtx.fillText('PAUSED', 200, 180 + titleBob);
+
+        const buttonDefs = [
+          { y: 280, h: 60, delay: 0.05 },
+          { y: 360, h: 60, delay: 0.15 },
+          { y: 440, h: 60, delay: 0.25 }
+        ];
 
         const hoverContinue = (mouseX >= 100 && mouseX <= 300 &&
                                mouseY >= 280 && mouseY <= 340);
@@ -1951,31 +2039,49 @@
         const hoverMenu = (mouseX >= 100 && mouseX <= 300 &&
                            mouseY >= 440 && mouseY <= 500);
 
-        if (hoverContinue) {
-          uiCtx.drawImage(btnContinueHoverImg, 100, 280, 200, 60);
-        } else {
-          uiCtx.drawImage(btnContinueImg, 100, 280, 200, 60);
+        const progresses = buttonDefs.map(b => {
+          let p = (pauseAnimTime - b.delay) / 0.35;
+          if (p < 0) p = 0;
+          if (p > 1) p = 1;
+          return p;
+        });
+
+        for (let i = 0; i < 3; i++) {
+          const b = buttonDefs[i];
+          const p = progresses[i];
+          const yOffset = (1 - p) * 30;
+          uiCtx.globalAlpha = p;
+
+          if (i === 0) {
+            if (hoverContinue) {
+              uiCtx.drawImage(btnContinueHoverImg, 100, b.y + yOffset, 200, b.h);
+            } else {
+              uiCtx.drawImage(btnContinueImg, 100, b.y + yOffset, 200, b.h);
+            }
+          } else if (i === 1) {
+            if (hoverRestart) {
+              uiCtx.drawImage(btnRestartHoverImg, 100, b.y + yOffset, 200, b.h);
+            } else {
+              uiCtx.drawImage(btnRestartImg, 100, b.y + yOffset, 200, b.h);
+            }
+          } else {
+            if (hoverMenu) {
+              uiCtx.drawImage(menuBtnHoverImg, 100, b.y + yOffset, 200, b.h);
+            } else {
+              uiCtx.drawImage(menuBtnImg, 100, b.y + yOffset, 200, b.h);
+            }
+          }
+
+          uiCtx.fillStyle = 'white';
+          uiCtx.font = 'bold 24px sans-serif';
+          uiCtx.textAlign = 'center';
+          if (i === 0) uiCtx.fillText('CONTINUE', 200, b.y + yOffset + 38);
+          if (i === 1) uiCtx.fillText('RESTART', 200, b.y + yOffset + 38);
+          if (i === 2) uiCtx.fillText('MENU', 200, b.y + yOffset + 38);
+          uiCtx.textAlign = 'left';
         }
 
-        if (hoverRestart) {
-          uiCtx.drawImage(btnRestartHoverImg, 100, 360, 200, 60);
-        } else {
-          uiCtx.drawImage(btnRestartImg, 100, 360, 200, 60);
-        }
-
-        if (hoverMenu) {
-          uiCtx.drawImage(menuBtnHoverImg, 100, 440, 200, 60);
-        } else {
-          uiCtx.drawImage(menuBtnImg, 100, 440, 200, 60);
-        }
-
-        uiCtx.fillStyle = 'white';
-        uiCtx.font = 'bold 24px sans-serif';
-        uiCtx.textAlign = 'center';
-        uiCtx.fillText('CONTINUE', 200, 318);
-        uiCtx.fillText('RESTART', 200, 398);
-        uiCtx.fillText('MENU', 200, 478);
-        uiCtx.textAlign = 'left';
+        uiCtx.globalAlpha = 1;
 
         if (fadingOut) {
           fadeAlpha = fadeAlpha + 0.05;
@@ -1988,6 +2094,7 @@
               uiCtx.clearRect(0, 0, 400, 600);
               inMenu = true;
               paused = false;
+              pauseAnimTime = 0;
               fadingIn = true;
             }
             pendingScene = null;
@@ -2160,6 +2267,9 @@
       }
 
       for (let p of platforms) {
+        if (p.spawnProgress < 1) {
+          p.spawnProgress = Math.min(1, p.spawnProgress + delta * 3);
+        }
         if (p.isMoving) {
           p.x = p.x + p.vx * delta;
           if (p.x < 0) {
@@ -2397,32 +2507,7 @@
         }
       }
 
-      for (let bgCloud of bgClouds) {
-        bgCloud.x = bgCloud.x + bgCloud.speed * 60 * delta;
-
-        if (bgCloud.x < -150) {
-          bgCloud.x = 450;
-          bgCloud.y = 100 + Math.random() * 400;
-        } else if (bgCloud.x > 450) {
-          bgCloud.x = -150;
-          bgCloud.y = 100 + Math.random() * 400;
-        }
-      }
-
-      for (let cloud of clouds) {
-        cloud.x = cloud.x + cloud.speed * 60 * delta;
-
-        if (cloud.x > 450) {
-          cloud.x = -100;
-          cloud.y = 450 + Math.random() * 150;
-        }
-      }
-
-      for (let bgCloud of bgClouds) {
-        ctx.globalAlpha = bgCloud.alpha;
-        ctx.drawImage(platformImg, bgCloud.x, bgCloud.y, bgCloud.size, 20);
-      }
-      ctx.globalAlpha = 1;
+      drawClouds(ctx);
 
       if (nightAlpha > 0) {
         for (let s of stars) {
@@ -2491,18 +2576,6 @@
         }
       }
 
-      for (let cloud of clouds) {
-        ctx.globalAlpha = cloud.alpha;
-        ctx.fillStyle = 'white';
-        ctx.beginPath();
-        ctx.arc(cloud.x, cloud.y, cloud.size / 2, 0, Math.PI * 2);
-        ctx.arc(cloud.x + cloud.size / 3, cloud.y - cloud.size / 5, cloud.size / 2.5, 0, Math.PI * 2);
-        ctx.arc(cloud.x - cloud.size / 3, cloud.y - cloud.size / 5, cloud.size / 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.globalAlpha = 1;
-
       const dayAlpha = (currentPhaseMod === 0) ? (1 - phaseTransition) : 0;
 
       if (dayAlpha > 0) {
@@ -2565,13 +2638,17 @@
         const pW = p.width || PLATFORM_W;
         const squashOffset = p.squash * 5;
         const drawHeight = 20 - squashOffset;
+        const riseOffset = (1 - p.spawnProgress) * 10;
+        const drawY = p.y + squashOffset + riseOffset;
+
+        ctx.globalAlpha = p.spawnProgress;
 
         if (p.spike) {
-          ctx.drawImage(spikeImg, p.x, p.y, pW, 20);
+          ctx.drawImage(spikeImg, p.x, drawY, pW, 20);
         } else if (p.spring) {
-          ctx.drawImage(springImg, p.x, p.y, pW, 20);
+          ctx.drawImage(springImg, p.x, drawY, pW, 20);
         } else {
-          ctx.drawImage(platformImg, p.x, p.y + squashOffset, pW, drawHeight);
+          ctx.drawImage(platformImg, p.x, drawY, pW, drawHeight);
         }
 
         if (p.hasCoin && !p.collected) {
@@ -2580,6 +2657,7 @@
           drawCoinAt(coinX, coinY, p.bobPhase, timeSeconds);
         }
       }
+      ctx.globalAlpha = 1;
 
       for (let pt of particles) {
         ctx.globalAlpha = pt.life;
